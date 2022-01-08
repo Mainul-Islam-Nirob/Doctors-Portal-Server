@@ -6,6 +6,8 @@ const ObjectId = require('mongodb').ObjectId;
 var cors = require('cors');
 const res = require('express/lib/response');
 const morgan = require('morgan');
+const fileUpload = require('express-fileupload');
+const fs = require('fs-extra');
 
 const app = express();
 
@@ -19,6 +21,8 @@ const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology:
 app.use(express.json())
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cors());
+app.use(express.static('doctors'));
+app.use(fileUpload());
 
 // Morgan Token
 morgan.token("person", (request, response) => {
@@ -38,6 +42,7 @@ app.use(
 
 client.connect(err => {
     const appointmentCollection = client.db(DB_NAME).collection("appointments");
+    const doctorsCollection = client.db(DB_NAME).collection("doctors");
 
     // perform actions on the collection object
     console.log("DB Connected");
@@ -49,9 +54,9 @@ client.connect(err => {
     app.post('/addAppointment', (req, res) => {
         const appointment = req.body;
         appointmentCollection.insertOne(appointment)
-        .then(result => {
-            res.send(result.acknowledged);
-        })  
+            .then(result => {
+                res.send(result.acknowledged);
+            })
     })
 
     app.get('/appointments', (req, res) => {
@@ -61,17 +66,73 @@ client.connect(err => {
             })
     })
 
-      app.post('/appointmentsByDate', (req, res) => {
+
+
+    app.post('/appointmentsByDate', (req, res) => {
         const date = req.body;
-        appointmentCollection.find({date: date.date})
-        .toArray((err, documents) => {
-            res.send(documents);
-        })
+        const email = req.body.email
+        doctorsCollection.find({ email: email })
+            .toArray((err, doctors) => {
+                const filter = { date: date.date };
+                if (doctors.length === 0) {
+                    filter.email = email;
+                }
+                appointmentCollection.find(filter)
+                    .toArray((err, documents) => {
+                        res.send(documents)
+                    })
+            })
+    })
+
+    app.post('/addDoctor', (req, res) => {
+        const file = req.files.file;
+        const name = req.body.name;
+        const email = req.body.email;
+        const phone = req.body.phone
+
+        const newImg = file.data;
+        const encImg = newImg.toString('base64');
+
+        var image = {
+            contentType: file.mimetype,
+            size: file.size,
+            img: Buffer.from(encImg, 'base64')
+        };
+
+        const doctor = {
+            name: name,
+            email: email,
+            phone: phone,
+            image: image
+        }
+
+        doctorsCollection.insertOne(doctor)
+            .then(result => {
+                res.send(result.acknowledged);
+
+            })
+    })
+
+    app.get('/doctors', (req, res) => {
+        doctorsCollection.find({})
+            .toArray((err, documents) => {
+                res.send(documents);
+            })
+    })
+
+
+    app.post('/isDoctor', (req, res) => {
+        const email = req.body.email
+        doctorsCollection.find({ email: email })
+            .toArray((err, doctors) => {
+                res.send(doctors.length > 0);
+
+            })
     })
 })
 
 
 const PORT = process.env.PORT || 3001
-app.listen(PORT, () => { 
+app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`)
 })
